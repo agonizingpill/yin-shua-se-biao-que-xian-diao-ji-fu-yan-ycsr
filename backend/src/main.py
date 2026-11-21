@@ -1,7 +1,7 @@
 import os,logging
 from contextlib import asynccontextmanager
 import redis
-from sqlalchemy import select
+from sqlalchemy import select,text
 from sqlalchemy.exc import IntegrityError
 from fastapi import FastAPI,Depends,HTTPException
 from fastapi.responses import JSONResponse
@@ -17,9 +17,22 @@ from .plate_service import require_ready
 from .paper_service import locked
 from .constants import ROLES,DEFECTS,JOB_STATES,ADJUSTMENT_STATES
 r=redis.Redis.from_url(os.environ['REDIS_URL'],decode_responses=True)
+def migrate_columns():
+    # 仅补新增列，不修改历史数据；旧签印/判读/封箱证据原样保留
+    added={
+        'plate_sets':[('role',"VARCHAR(20) NOT NULL DEFAULT 'backup'"),('in_use','BOOLEAN NOT NULL DEFAULT 0')],
+        'press_samples':[('purpose',"VARCHAR(20) NOT NULL DEFAULT 'routine'")],
+        'print_packs':[('plate_id','INTEGER NULL')],
+    }
+    with engine.begin() as conn:
+        for table,cols in added.items():
+            existing={row[1] for row in conn.execute(text(f'SHOW COLUMNS FROM {table}'))}
+            for name,ddl in cols:
+                if name not in existing:conn.execute(text(f'ALTER TABLE {table} ADD COLUMN {name} {ddl}'))
 @asynccontextmanager
 async def lifespan(app):
     Base.metadata.create_all(engine)
+    if engine.dialect.name=='mysql':migrate_columns()
     if os.getenv('SEED_DEMO','true')=='true':
         try:
             from scripts.seed_demo import seed

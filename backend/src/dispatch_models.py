@@ -46,6 +46,8 @@ class PrintPack(Base):
     sheets:Mapped[int]=mapped_column()
     state:Mapped[str]=mapped_column(String(24),default='open')
     sample_snapshot:Mapped[dict|None]=mapped_column(JSON,nullable=True)
+    # 封箱按所属版次裁决：登记时绑定当前在用版，额度按版次分别核算
+    plate_id:Mapped[int|None]=mapped_column(ForeignKey('plate_sets.id'),nullable=True)
 class PrintShipment(Base):
     __tablename__='print_shipments'
     id:Mapped[int]=mapped_column(primary_key=True)

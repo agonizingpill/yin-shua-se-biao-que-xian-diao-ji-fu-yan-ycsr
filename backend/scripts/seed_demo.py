@@ -18,7 +18,10 @@ def seed():
         for code,j,vals in [('PS-FIRST',0,[1.02,1.04,1.0,1.05,28]),('PS-RECHECK',0,[1.4,1.39,1.41,1.4,14]),('PS-FAIL',0,[1.01,1.0,1.03,1.05,29]),('PS-OTHER',1,[1.4,1.4,1.4,1.4,14]),('PS-OTHER-BAD',1,[1.7,1.1,1.55,1.4,15])]:
             if not s.scalar(select(ProofSheet).where(ProofSheet.code==code)):s.add(ProofSheet(code=code,job_id=jobs[j].id,density_c=vals[0],density_m=vals[1],density_y=vals[2],density_k=vals[3],dot_gain=vals[4]))
         for job in jobs:
-            if not s.scalar(select(PlateSet).where(PlateSet.job_id==job.id,PlateSet.version=='V1')):s.add(PlateSet(job_id=job.id,version='V1',source_note='客户定稿PDF转四色印版，首版待上机测量'))
+            if not s.scalar(select(PlateSet).where(PlateSet.job_id==job.id,PlateSet.version=='V1')):s.add(PlateSet(job_id=job.id,version='V1',source_note='客户定稿PDF转四色印版，首版待上机测量',role='backup',in_use=False))
+        # 工单1补一套V2备版（待测），演示备版登记不挡旧版量产
+        j1=jobs[0]
+        if not s.scalar(select(PlateSet).where(PlateSet.job_id==j1.id,PlateSet.version=='V2')):s.add(PlateSet(job_id=j1.id,version='V2',source_note='客户改版定稿PDF重制印版，备用待核，不影响V1生产',role='backup',in_use=False))
         rng=random.Random(42)
         for i in range(150):
             label=['合格','乳化','偏色'][i//50];means={'合格':[1.4,1.4,1.4,1.4,14],'乳化':[1.02,1.04,1.0,1.05,28],'偏色':[1.7,1.1,1.55,1.4,15]}[label]

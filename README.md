@@ -97,3 +97,22 @@ PrintPack箱码唯一，open可取消；production且无活动Hold/待判读样�
 按父工单锁串行化领退纸、累计印量、封箱和装运；锁读populate_existing刷新身份缓存。MySQL使用READ COMMITTED，取得工单锁后的聚合读取已提交净领纸/封箱量，避免等待前快照导致超额。种子仅缺失时添加157g/128g批次和PRESS-04，保留人工库存、历史signed与发货快照。
 
 本演示按张数追溯，不接真实WMS/物流，也不估算裁切、调机废纸；生产累计读数和现场可退余纸由机长录入，系统约束上限及一次退回。原240次/分钟限流仍生效。真实v3证据保存在test-artifacts/gb-1030/v3/。
+
+
+## V4 备用印版分离与换版放行
+
+针对“备用印版一登记就挡住旧版量产”的问题，印版拆分为**备用版（backup）**与**在用版（in_use）**两条身份，备版全生命周期不遮挡旧版生产。
+
+**备用与在用分离**：PlateSet新增`role`（in_use/backup）与`in_use`标志。新登记印版一律为备版，测量、主管认可均不改变在用版；工单无在用版时（首版）认可后自动激活，其余由主管显式`activate`激活。每工单至多一个在用版，备版期间旧版的调机执行、量产抽检、封箱发货照常。
+
+**换版状态机（PlateSwitch）**：仅量产工单可由机长发起换版，记录`old_plate_id/new_plate_id`与**累计印量分界**`split_quantity`（换版前常规抽检最高累计读数）。换版单`switching`期间：旧版保留不卸除、暂停一切放行（常规抽检、封箱、发货、复机均拒绝）；重试不重复建单。两条终结路径——`fail`切换失败：保留旧在用版，新版留备版调机，立即恢复旧版生产；`succeeded`：新版首张判合格并经**主管签印**后才交接在用版、恢复放行。首张判读迟回期间签印与回退均拒绝，不误放行；已终结换版单不能重复处置，失败后可重新发起。
+
+**换版首张**：`POST /plate-switches/{id}/first-article`新建色标走独立Redis队列`press-first-article`，沿用同一StandardScaler+RBF SVM训练判别（当前样张不入训练）。PressSample新增`purpose`（routine/first_article）：首张`first_article`不合格只置`held`留在调机、不触发量产停机，且**不作封箱额度依据**；旧版合格张不作新版依据。合格首张须主管`sign`签印才恢复。
+
+**按版次裁决与分别核算**：PrintPack新增`plate_id`，登记即绑定当前在用版。封箱、发货按箱所属版次裁决，并发换版时旧版箱只认旧版抽检；封箱额度按换版前后印量**分别核算**——每版已封/已发累计不超过该版常规合格抽检累计与净领纸，**旧版剩余额度不转给新版**；历史箱与封签快照（含版次、色标、数量）全部保留。`GET /plates/status`按工单返回在用版、最新登记版与**待放行原因**（活动停机、待判读、换版中）。
+
+新增接口：`GET /plates/status`、`POST /plates/{id}/activate`（仅主管）；`GET/POST /plate-switches`、`POST /plate-switches/{id}/first-article`、`/sign`（仅主管）、`/fail`。新表`plate_switches`自动建表；`plate_sets.role/in_use`、`press_samples.purpose`、`print_packs.plate_id`四列在MySQL启动时幂等`ALTER TABLE`补列，无旧表结构破坏，历史签印、判读与封箱证据保留。worker同时消费首张与常规两个判读队列。页面`plates.js`可切版、送验首张并查看在用版与待放行原因，`samples.js`区分常规抽检与换版首张，`shipments.js`展示箱属版次与按版核算依据。
+
+本地规则验证（SQLite+假Redis+同步worker，61项后端断言）与前端jsdom冒烟/交互（28项）在`test-harness/`：`python3 -I test-harness/e2e_switch.py`、`python3 -I test-harness/e2e_extra.py`。覆盖备版不挡量产、分界记录、失败回退、首张签印恢复、迟回判读不误放行、版次额度独立、停机与换版互斥、viewer只读等。
+
+范围：换版暂停放行作用于本应用操作，不控制真实印刷机上下版；首张仍为人工取样录入，无PLC联锁与物理防伪；版次额度按张数核算，不合并裁切损耗。

@@ -17,6 +17,19 @@ class SampleInput(ProofInput):
     model_config=ConfigDict(allow_inf_nan=False)
     sequence:int=Field(ge=1,le=1000000)
     quantity:int=Field(ge=1,le=10000000)
+class FirstArticleInput(ProofInput):
+    model_config=ConfigDict(allow_inf_nan=False)
+    quantity:int=Field(ge=1,le=10000000)
+class SwitchStart(Inputs):
+    job_id:int
+    new_plate_id:int
+class SwitchFail(Inputs):
+    note:str=Field(min_length=5,max=300)
+    @field_validator('note')
+    @classmethod
+    def note_required(cls,v):
+        if len(v.strip())<5:raise ValueError('失败依据至少5字')
+        return v.strip()
 class HoldClose(Inputs):
     resolution:str=Field(min_length=5,max_length=500)
     @field_validator('resolution')
